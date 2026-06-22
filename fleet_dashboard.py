@@ -599,7 +599,7 @@ def save_html(content: str, path: str) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
+# def main():
     csv_path  = "fleet_status.csv"
     html_path = "fleet_dashboard.html"
 
@@ -621,5 +621,5 @@ def main():
     save_html(content, html_path)
     print(f"\nDone! Open '{html_path}' in any browser (internet required for map tiles).")
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
