@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Fleet Command — Live Dashboard</title>
+
+<!-- Leaflet CSS (loaded by browser at open time) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:        #020818;
+  --surface:   #0d1526;
+  --surface2:  #141f35;
+  --border:    #1e2d47;
+  --text:      #e2e8f0;
+  --muted:     #64748b;
+  --accent:    #3b82f6;
+  --radius:    12px;
+  --font-mono: "JetBrains Mono","Fira Code",ui-monospace,monospace;
+  --font-body: "Inter","Segoe UI",system-ui,sans-serif;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+.shell { max-width: 1280px; margin: 0 auto; padding: 0 24px 48px; }
+
+/* Header */
+.site-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 20px 0 18px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+  flex-wrap: wrap; gap: 12px;
+}
+.header-brand { display:flex; align-items:center; gap:12px; }
+.brand-mark {
+  width:38px; height:38px;
+  background: linear-gradient(135deg,#3b82f6,#8b5cf6);
+  border-radius:10px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:20px;
+}
+.brand-name { font-size:18px; font-weight:700; letter-spacing:-0.3px; color:#f1f5f9; }
+.brand-sub  { font-size:12px; color:var(--muted); }
+.header-meta { font-size:12px; color:var(--muted); text-align:right; }
+.live-dot {
+  display:inline-block; width:8px; height:8px;
+  border-radius:50%; background:#22c55e; margin-right:6px;
+  animation: blink 2s infinite;
+}
+@keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+/* Section label */
+.section-label {
+  font-size:11px; font-weight:600; letter-spacing:0.08em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:14px;
+}
+
+/* KPI */
+.kpi-grid {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:14px; margin-bottom:36px;
+}
+.kpi-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-top:3px solid var(--accent); border-radius:var(--radius);
+  padding:18px 16px 14px;
+  display:flex; flex-direction:column; align-items:flex-start; gap:4px;
+  transition:transform 0.15s,box-shadow 0.15s;
+}
+.kpi-card:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,0.4); }
+.kpi-icon  { font-size:20px; margin-bottom:6px; }
+.kpi-count { font-size:32px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums; }
+.kpi-label { font-size:12px; color:var(--muted); }
+
+/* Map section */
+.map-section { margin-bottom:36px; }
+.map-header {
+  display:flex; align-items:center; justify-content:space-between;
+  flex-wrap:wrap; gap:8px; margin-bottom:12px;
+}
+.map-legend { display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--muted); }
+.leg-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+
+/* Leaflet container */
+#fleet-map {
+  height: 500px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+/* Override Leaflet popup to match dark theme */
+.leaflet-popup-content-wrapper {
+  border-radius: 10px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35) !important;
+  padding: 0 !important;
+}
+.leaflet-popup-content {
+  margin: 14px 16px !important;
+  font-size: 13px;
+}
+.leaflet-popup-tip-container { display:none; }
+.leaflet-control-zoom a {
+  background: #1e2d47 !important;
+  color: #e2e8f0 !important;
+  border-color: #2d4163 !important;
+}
+.leaflet-control-zoom a:hover { background:#2d4163 !important; }
+
+/* Table */
+.table-section { margin-bottom:36px; }
+.table-controls {
+  display:flex; align-items:center; justify-content:space-between;
+  flex-wrap:wrap; gap:10px; margin-bottom:12px;
+}
+.search-box {
+  background:var(--surface2); border:1px solid var(--border); border-radius:8px;
+  color:var(--text); padding:7px 14px; font-size:13px; width:240px;
+  outline:none; transition:border-color 0.2s;
+}
+.search-box:focus { border-color:var(--accent); }
+.table-wrap { overflow-x:auto; border-radius:var(--radius); border:1px solid var(--border); }
+.fleet-table { width:100%; border-collapse:collapse; font-size:13px; }
+.fleet-table thead tr { background:var(--surface2); border-bottom:1px solid var(--border); }
+.fleet-table th {
+  padding:11px 14px; text-align:left;
+  font-size:11px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;
+  color:var(--muted); cursor:pointer; user-select:none; white-space:nowrap;
+}
+.fleet-table th:hover { color:var(--text); }
+.fleet-table td { padding:10px 14px; border-bottom:1px solid #111c30; vertical-align:middle; }
+.row-even { background:var(--surface); }
+.row-odd  { background:#0a1220; }
+.fleet-table tr:last-child td { border-bottom:none; }
+.fleet-table tbody tr:hover { background:#162035; }
+.badge {
+  display:inline-block; padding:2px 9px; border-radius:20px;
+  font-size:11px; font-weight:600; letter-spacing:0.03em; white-space:nowrap;
+}
+.batt-wrap { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+.batt-pct  { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.batt-na   { color:var(--muted); font-size:12px; }
+.mono  { font-family:var(--font-mono); font-size:12px; }
+.small { font-size:12px; }
+.muted { color:var(--muted); }
+
+/* Footer */
+.site-footer {
+  border-top:1px solid var(--border); padding-top:18px;
+  font-size:12px; color:var(--muted);
+  display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+}
+
+@media (max-width:640px) {
+  .kpi-count { font-size:26px; }
+  .search-box { width:100%; }
+  #fleet-map { height:360px; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="site-header">
+    <div class="header-brand">
+      <div class="brand-mark">🚛</div>
+      <div>
+        <div class="brand-name">Fleet Command</div>
+        <div class="brand-sub">GPS Tracking Dashboard</div>
+      </div>
+    </div>
+    <div class="header-meta">
+      <span class="live-dot"></span>Generated 22 Jun 2026, 06:23:39<br>
+      35 devices tracked
+    </div>
+  </header>
+
+  <p class="section-label">Fleet Overview</p>
+  <div class="kpi-grid">
+    <div class="kpi-card" style="--accent:#6366f1">
+      <div class="kpi-icon">🚛</div>
+      <div class="kpi-count" style="color:#6366f1">35</div>
+      <div class="kpi-label">Total Devices</div>
+    </div>
+    <div class="kpi-card" style="--accent:#22c55e">
+      <div class="kpi-icon">✅</div>
+      <div class="kpi-count" style="color:#22c55e">11</div>
+      <div class="kpi-label">Active</div>
+    </div>
+    <div class="kpi-card" style="--accent:#f97316">
+      <div class="kpi-icon">⏸</div>
+      <div class="kpi-count" style="color:#f97316">6</div>
+      <div class="kpi-label">Idle</div>
+    </div>
+    <div class="kpi-card" style="--accent:#ef4444">
+      <div class="kpi-icon">🔴</div>
+      <div class="kpi-count" style="color:#ef4444">12</div>
+      <div class="kpi-label">Offline</div>
+    </div>
+    <div class="kpi-card" style="--accent:#eab308">
+      <div class="kpi-icon">🔋</div>
+      <div class="kpi-count" style="color:#eab308">6</div>
+      <div class="kpi-label">Low Battery</div>
+    </div></div>
+
+  <section class="map-section">
+    <div class="map-header">
+      <p class="section-label" style="margin-bottom:0">Live Map</p>
+      <div class="map-legend"><span class="leg-dot" style="background:#22c55e"></span>Active <span class="leg-dot" style="background:#f97316"></span>Idle <span class="leg-dot" style="background:#ef4444"></span>Offline <span class="leg-dot" style="background:#eab308"></span>Low Battery </div>
+    </div>
+    <div id="fleet-map"></div>
+  </section>
+
+  <section class="table-section">
+    <div class="table-controls">
+      <p class="section-label" style="margin-bottom:0">Device List</p>
+      <input class="search-box" type="text" id="search-input"
+             placeholder="Search by ID, name, location…"
+             oninput="filterTable(this.value)"/>
+    </div>
+    
+<div class="table-wrap">
+  <table id="fleet-table" class="fleet-table">
+    <thead>
+      <tr>
+        <th onclick="sortTable(0)">Device ID ⇅</th>
+        <th onclick="sortTable(1)">Vehicle ⇅</th>
+        <th onclick="sortTable(2)">Status ⇅</th>
+        <th onclick="sortTable(3)">Battery ⇅</th>
+        <th onclick="sortTable(4)">Location ⇅</th>
+        <th onclick="sortTable(5)">Last Seen ⇅</th>
+        <th>Since</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr class="row-even">
+          <td class="mono">TRK001</td>
+          <td>CityFleet SUV 1</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="1%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="0" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">1%</span></span></td>
+          <td>Parramatta</td>
+          <td class="mono small">2026-04-23 18:32:00</td>
+          <td class="small muted">59 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK002</td>
+          <td>FastFreight Van 2</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-wrap" title="79%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="22" height="9" rx="1.5" fill="#22c55e"/></svg><span class="batt-pct">79%</span></span></td>
+          <td>Parramatta</td>
+          <td class="mono small">2026-04-24 08:59:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK003</td>
+          <td>SunRoute Van 3</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="0%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="0" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">0%</span></span></td>
+          <td>Bondi Junction</td>
+          <td class="mono small">2026-04-23 12:42:00</td>
+          <td class="small muted">59 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK004</td>
+          <td>PrimeLogistics Truck 4</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="0%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="0" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">0%</span></span></td>
+          <td>Parramatta</td>
+          <td class="mono small">2026-04-24 00:28:00</td>
+          <td class="small muted">59 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK005</td>
+          <td>SunRoute SUV 5</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-wrap" title="88%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="25" height="9" rx="1.5" fill="#22c55e"/></svg><span class="batt-pct">88%</span></span></td>
+          <td>Perth CBD</td>
+          <td class="mono small">2026-04-24 08:58:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK006</td>
+          <td>SunRoute Truck 6</td>
+          <td><span class="badge" style="background:#ffedd5;color:#c2410c">Idle</span></td>
+          <td><span class="batt-wrap" title="62%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="17" height="9" rx="1.5" fill="#22c55e"/></svg><span class="batt-pct">62%</span></span></td>
+          <td>Perth CBD</td>
+          <td class="mono small">2026-04-24 08:49:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK007</td>
+          <td>CityFleet Ute 7</td>
+          <td><span class="badge" style="background:#fef9c3;color:#854d0e">Low Battery</span></td>
+          <td><span class="batt-wrap" title="9%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="3" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">9%</span></span></td>
+          <td>Melbourne CBD</td>
+          <td class="mono small">2026-04-24 08:57:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK008</td>
+          <td>PrimeLogistics Ute 8</td>
+          <td><span class="badge" style="background:#ffedd5;color:#c2410c">Idle</span></td>
+          <td><span class="batt-wrap" title="38%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="11" height="9" rx="1.5" fill="#f97316"/></svg><span class="batt-pct">38%</span></span></td>
+          <td>Wollongong</td>
+          <td class="mono small">2026-04-24 08:11:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK009</td>
+          <td>CityFleet Truck 9</td>
+          <td><span class="badge" style="background:#fef9c3;color:#854d0e">Low Battery</span></td>
+          <td><span class="batt-wrap" title="5%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="1" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">5%</span></span></td>
+          <td>North Sydney</td>
+          <td class="mono small">2026-04-24 08:56:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK010</td>
+          <td>CityFleet Ute 10</td>
+          <td><span class="badge" style="background:#fef9c3;color:#854d0e">Low Battery</span></td>
+          <td><span class="batt-wrap" title="7%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="2" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">7%</span></span></td>
+          <td>North Sydney</td>
+          <td class="mono small">2026-04-24 09:00:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK011</td>
+          <td>AusBuild Ute 11</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="4%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="1" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">4%</span></span></td>
+          <td>Fremantle</td>
+          <td class="mono small">2026-04-23 15:03:00</td>
+          <td class="small muted">59 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK012</td>
+          <td>PrimeLogistics Ute 12</td>
+          <td><span class="badge" style="background:#fef9c3;color:#854d0e">Low Battery</span></td>
+          <td><span class="batt-wrap" title="2%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="1" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">2%</span></span></td>
+          <td>Central Coast</td>
+          <td class="mono small">2026-04-24 09:00:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK013</td>
+          <td>SunRoute Van 13</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="5%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="1" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">5%</span></span></td>
+          <td>Sydney CBD</td>
+          <td class="mono small">2026-04-23 20:10:00</td>
+          <td class="small muted">59 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK014</td>
+          <td>PrimeLogistics Sedan 14</td>
+          <td><span class="badge" style="background:#fef9c3;color:#854d0e">Low Battery</span></td>
+          <td><span class="batt-wrap" title="1%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="0" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">1%</span></span></td>
+          <td>Central Coast</td>
+          <td class="mono small">2026-04-24 08:59:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK015</td>
+          <td>PrimeLogistics SUV 15</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-wrap" title="36%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="10" height="9" rx="1.5" fill="#f97316"/></svg><span class="batt-pct">36%</span></span></td>
+          <td>Ballarat</td>
+          <td class="mono small">2026-04-24 08:57:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK016</td>
+          <td>FastFreight Truck 16</td>
+          <td><span class="badge" style="background:#ffedd5;color:#c2410c">Idle</span></td>
+          <td><span class="batt-wrap" title="68%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="19" height="9" rx="1.5" fill="#22c55e"/></svg><span class="batt-pct">68%</span></span></td>
+          <td>Ballarat</td>
+          <td class="mono small">2026-04-24 08:33:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK017</td>
+          <td>CityFleet Ute 17</td>
+          <td><span class="badge" style="background:#ffedd5;color:#c2410c">Idle</span></td>
+          <td><span class="batt-wrap" title="99%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="28" height="9" rx="1.5" fill="#22c55e"/></svg><span class="batt-pct">99%</span></span></td>
+          <td>Sydney CBD</td>
+          <td class="mono small">2026-04-24 08:41:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK018</td>
+          <td>FastFreight SUV 18</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-wrap" title="33%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="9" height="9" rx="1.5" fill="#f97316"/></svg><span class="batt-pct">33%</span></span></td>
+          <td>Perth CBD</td>
+          <td class="mono small">2026-04-24 08:57:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK019</td>
+          <td>AusBuild Sedan 19</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-wrap" title="73%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="20" height="9" rx="1.5" fill="#22c55e"/></svg><span class="batt-pct">73%</span></span></td>
+          <td>Perth CBD</td>
+          <td class="mono small">2026-04-24 08:55:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK020</td>
+          <td>AusBuild Ute 20</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="0%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="0" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">0%</span></span></td>
+          <td>North Sydney</td>
+          <td class="mono small">2026-04-24 01:30:00</td>
+          <td class="small muted">59 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK021</td>
+          <td>CityFleet SUV 21</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-wrap" title="28%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="8" height="9" rx="1.5" fill="#f97316"/></svg><span class="batt-pct">28%</span></span></td>
+          <td>Fremantle</td>
+          <td class="mono small">2026-04-24 09:00:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK022</td>
+          <td>CityFleet SUV 22</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-wrap" title="24%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="7" height="9" rx="1.5" fill="#f97316"/></svg><span class="batt-pct">24%</span></span></td>
+          <td>Hobart CBD</td>
+          <td class="mono small">2026-04-24 08:59:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK023</td>
+          <td>PrimeLogistics Sedan 23</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="3%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="1" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">3%</span></span></td>
+          <td>Bondi Junction</td>
+          <td class="mono small">2026-04-24 03:49:00</td>
+          <td class="small muted">59 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK024</td>
+          <td>CityFleet Sedan 24</td>
+          <td><span class="badge" style="background:#fef9c3;color:#854d0e">Low Battery</span></td>
+          <td><span class="batt-wrap" title="5%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="1" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">5%</span></span></td>
+          <td>Chatswood</td>
+          <td class="mono small">2026-04-24 09:00:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK025</td>
+          <td>FastFreight SUV 25</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-wrap" title="81%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="23" height="9" rx="1.5" fill="#22c55e"/></svg><span class="batt-pct">81%</span></span></td>
+          <td>Penrith</td>
+          <td class="mono small">2026-04-24 09:00:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK026</td>
+          <td>CityFleet Truck 26</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-wrap" title="82%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="23" height="9" rx="1.5" fill="#22c55e"/></svg><span class="batt-pct">82%</span></span></td>
+          <td>North Sydney</td>
+          <td class="mono small">2026-04-24 08:58:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK027</td>
+          <td>FastFreight SUV 27</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="1%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="0" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">1%</span></span></td>
+          <td>Perth CBD</td>
+          <td class="mono small">2026-04-23 13:50:00</td>
+          <td class="small muted">59 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK028</td>
+          <td>SunRoute Sedan 28</td>
+          <td><span class="badge" style="background:#ffedd5;color:#c2410c">Idle</span></td>
+          <td><span class="batt-wrap" title="45%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="13" height="9" rx="1.5" fill="#f97316"/></svg><span class="batt-pct">45%</span></span></td>
+          <td>Ballarat</td>
+          <td class="mono small">2026-04-24 08:03:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK029</td>
+          <td>FastFreight SUV 29</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="5%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="1" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">5%</span></span></td>
+          <td>Sydney CBD</td>
+          <td class="mono small">2026-04-24 07:01:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK030</td>
+          <td>PrimeLogistics Truck 30</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="3%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="1" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">3%</span></span></td>
+          <td>Geelong</td>
+          <td class="mono small">2026-04-23 20:05:00</td>
+          <td class="small muted">59 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK031</td>
+          <td>TRK031</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-na">N/A</span></td>
+          <td>Perth CBD</td>
+          <td class="mono small">2026-04-24 08:45:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK032</td>
+          <td>FastFreight Van 32</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Maintenance</span></td>
+          <td><span class="batt-wrap" title="72%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="20" height="9" rx="1.5" fill="#22c55e"/></svg><span class="batt-pct">72%</span></span></td>
+          <td>Sydney CBD</td>
+          <td class="mono small">2026-04-24 07:30:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK033</td>
+          <td>CityFleet Truck 33</td>
+          <td><span class="badge" style="background:#dcfce7;color:#15803d">Active</span></td>
+          <td><span class="batt-wrap" title="100%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="28" height="9" rx="1.5" fill="#22c55e"/></svg><span class="batt-pct">100%</span></span></td>
+          <td>Melbourne CBD</td>
+          <td class="mono small">2026-04-24 09:05:00</td>
+          <td class="small muted">58 days ago</td>
+        </tr>
+        <tr class="row-odd">
+          <td class="mono">TRK034</td>
+          <td>AusBuild Ute 34</td>
+          <td><span class="badge" style="background:#fee2e2;color:#b91c1c">Offline</span></td>
+          <td><span class="batt-wrap" title="12%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="3" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">12%</span></span></td>
+          <td>Brisbane CBD</td>
+          <td class="mono small">2026-04-24 06:00:00</td>
+          <td class="small muted">59 days ago</td>
+        </tr>
+        <tr class="row-even">
+          <td class="mono">TRK035</td>
+          <td>SunRoute SUV 35</td>
+          <td><span class="badge" style="background:#ffedd5;color:#c2410c">Idle</span></td>
+          <td><span class="batt-wrap" title="0%"><svg width="36" height="14" viewBox="0 0 36 14" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="1" width="32" height="12" rx="2" fill="none" stroke="#475569" stroke-width="1.5"/><rect x="32" y="4" width="3" height="6" rx="1" fill="#475569"/><rect x="1.5" y="2.5" width="0" height="9" rx="1.5" fill="#ef4444"/></svg><span class="batt-pct">0%</span></span></td>
+          <td>Brisbane CBD</td>
+          <td class="mono small">Invalid date</td>
+          <td class="small muted">Unknown</td>
+        </tr></tbody>
+  </table>
+</div>
+
+  </section>
+
+  <footer class="site-footer">
+    <span>Fleet Command · 22 Jun 2026, 06:23:39</span>
+    <span>11 active · 12 offline · 6 low battery</span>
+  </footer>
+
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ---- Leaflet Map ----
+(function() {
+  var map = L.map('fleet-map', {
+    center: [-27.0, 134.0],
+    zoom: 5,
+    zoomControl: true
+  });
+
+  // Dark-themed tile layer (CartoDB Dark Matter — no API key needed)
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19
+  }).addTo(map);
+
+  // Status colour map
+  var colours = {
+    active:      '#22c55e',
+    idle:        '#f97316',
+    offline:     '#ef4444',
+    low_battery: '#eab308'
+  };
+
+  // Device data
+  var markers = [
+{"lat": -33.821841, "lon": 151.002574, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK001 \u2014 CityFleet SUV 1</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Offline</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>1%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Parramatta</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>59 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8218, 151.0026</td></tr></table></div>", "id": "TRK001"},
+{"lat": -33.821625, "lon": 151.000691, "colour": "#22c55e", "status": "active", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK002 \u2014 FastFreight Van 2</div><span style='background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Active</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>79%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Parramatta</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8216, 151.0007</td></tr></table></div>", "id": "TRK002"},
+{"lat": -33.884341, "lon": 151.25109, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK003 \u2014 SunRoute Van 3</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Offline</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>0%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Bondi Junction</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>59 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8843, 151.2511</td></tr></table></div>", "id": "TRK003"},
+{"lat": -33.814093, "lon": 150.996131, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK004 \u2014 PrimeLogistics Truck 4</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Offline</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>0%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Parramatta</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>59 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8141, 150.9961</td></tr></table></div>", "id": "TRK004"},
+{"lat": -31.945442, "lon": 115.855392, "colour": "#22c55e", "status": "active", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK005 \u2014 SunRoute SUV 5</div><span style='background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Active</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>88%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Perth CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-31.9454, 115.8554</td></tr></table></div>", "id": "TRK005"},
+{"lat": -31.947106, "lon": 115.86153, "colour": "#f97316", "status": "idle", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK006 \u2014 SunRoute Truck 6</div><span style='background:#ffedd5;color:#c2410c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Idle</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>62%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Perth CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-31.9471, 115.8615</td></tr></table></div>", "id": "TRK006"},
+{"lat": -37.81415, "lon": 144.969875, "colour": "#eab308", "status": "low_battery", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK007 \u2014 CityFleet Ute 7</div><span style='background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Low Battery</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>9%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Melbourne CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-37.8141, 144.9699</td></tr></table></div>", "id": "TRK007"},
+{"lat": -34.43449, "lon": 150.889904, "colour": "#f97316", "status": "idle", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK008 \u2014 PrimeLogistics Ute 8</div><span style='background:#ffedd5;color:#c2410c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Idle</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>38%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Wollongong</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-34.4345, 150.8899</td></tr></table></div>", "id": "TRK008"},
+{"lat": -33.845111, "lon": 151.20519, "colour": "#eab308", "status": "low_battery", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK009 \u2014 CityFleet Truck 9</div><span style='background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Low Battery</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>5%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>North Sydney</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8451, 151.2052</td></tr></table></div>", "id": "TRK009"},
+{"lat": -33.834767, "lon": 151.207668, "colour": "#eab308", "status": "low_battery", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK010 \u2014 CityFleet Ute 10</div><span style='background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Low Battery</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>7%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>North Sydney</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8348, 151.2077</td></tr></table></div>", "id": "TRK010"},
+{"lat": -32.05215, "lon": 115.7631, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK011 \u2014 AusBuild Ute 11</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Offline</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>4%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Fremantle</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>59 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-32.0521, 115.7631</td></tr></table></div>", "id": "TRK011"},
+{"lat": -33.418646, "lon": 151.35029, "colour": "#eab308", "status": "low_battery", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK012 \u2014 PrimeLogistics Ute 12</div><span style='background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Low Battery</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>2%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Central Coast</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.4186, 151.3503</td></tr></table></div>", "id": "TRK012"},
+{"lat": -33.86175, "lon": 151.206987, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK013 \u2014 SunRoute Van 13</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Offline</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>5%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Sydney CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>59 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8618, 151.2070</td></tr></table></div>", "id": "TRK013"},
+{"lat": -33.426931, "lon": 151.338362, "colour": "#eab308", "status": "low_battery", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK014 \u2014 PrimeLogistics Sedan 14</div><span style='background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Low Battery</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>1%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Central Coast</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.4269, 151.3384</td></tr></table></div>", "id": "TRK014"},
+{"lat": -37.561409, "lon": 143.856434, "colour": "#22c55e", "status": "active", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK015 \u2014 PrimeLogistics SUV 15</div><span style='background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Active</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>36%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Ballarat</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-37.5614, 143.8564</td></tr></table></div>", "id": "TRK015"},
+{"lat": -37.554876, "lon": 143.844715, "colour": "#f97316", "status": "idle", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK016 \u2014 FastFreight Truck 16</div><span style='background:#ffedd5;color:#c2410c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Idle</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>68%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Ballarat</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-37.5549, 143.8447</td></tr></table></div>", "id": "TRK016"},
+{"lat": -33.869041, "lon": 151.210726, "colour": "#f97316", "status": "idle", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK017 \u2014 CityFleet Ute 17</div><span style='background:#ffedd5;color:#c2410c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Idle</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>99%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Sydney CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8690, 151.2107</td></tr></table></div>", "id": "TRK017"},
+{"lat": -31.952592, "lon": 115.861561, "colour": "#22c55e", "status": "active", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK018 \u2014 FastFreight SUV 18</div><span style='background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Active</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>33%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Perth CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-31.9526, 115.8616</td></tr></table></div>", "id": "TRK018"},
+{"lat": -31.952222, "lon": 115.858884, "colour": "#22c55e", "status": "active", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK019 \u2014 AusBuild Sedan 19</div><span style='background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Active</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>73%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Perth CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-31.9522, 115.8589</td></tr></table></div>", "id": "TRK019"},
+{"lat": -33.831245, "lon": 151.20555, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK020 \u2014 AusBuild Ute 20</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Offline</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>0%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>North Sydney</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>59 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8312, 151.2055</td></tr></table></div>", "id": "TRK020"},
+{"lat": -32.06248, "lon": 115.763623, "colour": "#22c55e", "status": "active", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK021 \u2014 CityFleet SUV 21</div><span style='background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Active</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>28%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Fremantle</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-32.0625, 115.7636</td></tr></table></div>", "id": "TRK021"},
+{"lat": -42.88408, "lon": 147.329351, "colour": "#22c55e", "status": "active", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK022 \u2014 CityFleet SUV 22</div><span style='background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Active</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>24%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Hobart CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-42.8841, 147.3294</td></tr></table></div>", "id": "TRK022"},
+{"lat": -33.885917, "lon": 151.25689, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK023 \u2014 PrimeLogistics Sedan 23</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Offline</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>3%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Bondi Junction</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>59 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8859, 151.2569</td></tr></table></div>", "id": "TRK023"},
+{"lat": -33.803265, "lon": 151.180482, "colour": "#eab308", "status": "low_battery", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK024 \u2014 CityFleet Sedan 24</div><span style='background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Low Battery</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>5%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Chatswood</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8033, 151.1805</td></tr></table></div>", "id": "TRK024"},
+{"lat": -33.743784, "lon": 150.694652, "colour": "#22c55e", "status": "active", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK025 \u2014 FastFreight SUV 25</div><span style='background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Active</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>81%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Penrith</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.7438, 150.6947</td></tr></table></div>", "id": "TRK025"},
+{"lat": -33.835861, "lon": 151.202678, "colour": "#22c55e", "status": "active", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK026 \u2014 CityFleet Truck 26</div><span style='background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Active</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>82%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>North Sydney</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8359, 151.2027</td></tr></table></div>", "id": "TRK026"},
+{"lat": -31.946035, "lon": 115.857775, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK027 \u2014 FastFreight SUV 27</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Offline</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>1%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Perth CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>59 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-31.9460, 115.8578</td></tr></table></div>", "id": "TRK027"},
+{"lat": -37.558362, "lon": 143.845928, "colour": "#f97316", "status": "idle", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK028 \u2014 SunRoute Sedan 28</div><span style='background:#ffedd5;color:#c2410c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Idle</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>45%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Ballarat</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-37.5584, 143.8459</td></tr></table></div>", "id": "TRK028"},
+{"lat": -33.864158, "lon": 151.208856, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK029 \u2014 FastFreight SUV 29</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Offline</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>5%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Sydney CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8642, 151.2089</td></tr></table></div>", "id": "TRK029"},
+{"lat": -38.156611, "lon": 144.355335, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK030 \u2014 PrimeLogistics Truck 30</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Offline</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>3%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Geelong</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>59 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-38.1566, 144.3553</td></tr></table></div>", "id": "TRK030"},
+{"lat": -33.87, "lon": 151.21, "colour": "#ef4444", "status": "offline", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK032 \u2014 FastFreight Van 32</div><span style='background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Maintenance</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>72%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Sydney CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-33.8700, 151.2100</td></tr></table></div>", "id": "TRK032"},
+{"lat": -37.814, "lon": 144.963, "colour": "#22c55e", "status": "active", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK033 \u2014 CityFleet Truck 33</div><span style='background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Active</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>100%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Melbourne CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>58 days ago</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-37.8140, 144.9630</td></tr></table></div>", "id": "TRK033"},
+{"lat": -27.47, "lon": 153.0255, "colour": "#f97316", "status": "idle", "popup": "<div style='font-family:system-ui,sans-serif;min-width:200px'><div style='font-weight:700;font-size:14px;margin-bottom:6px;color:#1e293b'>TRK035 \u2014 SunRoute SUV 35</div><span style='background:#ffedd5;color:#c2410c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600'>Idle</span><table style='margin-top:10px;width:100%;font-size:12px;border-collapse:collapse'><tr><td style='color:#64748b;padding:2px 0'>Battery</td><td style='font-weight:600;text-align:right'>0%</td></tr><tr><td style='color:#64748b;padding:2px 0'>Location</td><td style='font-weight:600;text-align:right'>Brisbane CBD</td></tr><tr><td style='color:#64748b;padding:2px 0'>Last seen</td><td style='font-weight:600;text-align:right'>Unknown</td></tr><tr><td style='color:#64748b;padding:2px 0'>Coords</td><td style='font-weight:600;text-align:right;font-size:10px'>-27.4700, 153.0255</td></tr></table></div>", "id": "TRK035"}
+];
+
+  markers.forEach(function(m) {
+    var colour = m.colour;
+    var isActive = m.status === 'active';
+
+    // Custom circle marker with optional pulse for active
+    var circleOuter = L.circleMarker([m.lat, m.lon], {
+      radius: isActive ? 14 : 0,
+      color: colour,
+      fillColor: colour,
+      fillOpacity: 0.15,
+      weight: 0
+    });
+
+    var circle = L.circleMarker([m.lat, m.lon], {
+      radius: 8,
+      color: '#ffffff',
+      fillColor: colour,
+      fillOpacity: 1,
+      weight: 2
+    });
+
+    if (isActive) circleOuter.addTo(map);
+
+    circle.addTo(map).bindPopup(m.popup, {
+      maxWidth: 260,
+      minWidth: 220
+    });
+
+    // Show device ID label on hover
+    circle.bindTooltip(m.id, {
+      permanent: false,
+      direction: 'top',
+      offset: [0, -10],
+      className: 'dev-label'
+    });
+  });
+})();
+
+// ---- Table Sort ----
+var sortDir = {};
+function sortTable(col) {
+  var tbody = document.querySelector('#fleet-table tbody');
+  var rows = Array.from(tbody.rows);
+  sortDir[col] = sortDir[col] === 'asc' ? 'desc' : 'asc';
+  rows.sort(function(a, b) {
+    var av = a.cells[col].textContent.trim().toLowerCase();
+    var bv = b.cells[col].textContent.trim().toLowerCase();
+    var an = parseFloat(av), bn = parseFloat(bv);
+    var cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv);
+    return sortDir[col] === 'asc' ? cmp : -cmp;
+  });
+  rows.forEach(function(r, i) {
+    tbody.appendChild(r);
+    r.className = i % 2 === 0 ? 'row-even' : 'row-odd';
+  });
+}
+
+// ---- Table Search ----
+function filterTable(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#fleet-table tbody tr').forEach(function(r) {
+    r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+</body>
+</html>
